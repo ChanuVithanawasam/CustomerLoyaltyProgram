@@ -1,112 +1,209 @@
 package com.example.customerloyaltyprogram;
 
 import javafx.application.Application;
-import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.layout.*;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
-import java.util.HashMap;
+import java.sql.*;
 
 public class Main extends Application {
-
-    private HashMap<String, Integer> customerPoints = new HashMap<>();
-    private static final int POINTS_PER_RUPEE = 10;
-    private static final int POINT_TO_RUPEE_CONVERSION = 1;
-
-    private TextField phoneField, amountField;
-    private TextArea outputArea;
+    private final String DB_URL = "jdbc:mysql://localhost:3306/loyalty_program";
+    private final String DB_USERNAME = "root";
+    private final String DB_PASSWORD = "1234";
 
     @Override
     public void start(Stage primaryStage) {
-        primaryStage.setTitle("Phone Shop Loyalty Program");
+        // UI Elements for Adding/Updating Customer Points
+        Label nameLabel = new Label("Customer Name:");
+        TextField nameField = new TextField();
 
-        // Input Fields and Labels
-        Label phoneLabel = new Label("Customer Phone:");
-        phoneField = new TextField();
-        phoneField.setPromptText("Enter phone number");
+        Label phoneLabel = new Label("Phone Number:");
+        TextField phoneField = new TextField();
 
-        Label amountLabel = new Label("Amount Spent:");
-        amountField = new TextField();
-        amountField.setPromptText("Enter amount spent");
+        Label pointsLabel = new Label("Purchase Amount:");
+        TextField pointsField = new TextField();
 
-        // Buttons
-        Button addPointsButton = new Button("Add Points");
-        Button convertPointsButton = new Button("Convert Points");
+        Button submitButton = new Button("Submit");
+        Label resultLabel = new Label();
 
-        // Output Area
-        outputArea = new TextArea();
-        outputArea.setEditable(false);
-        outputArea.setPromptText("Results will appear here...");
+        // UI Elements for Searching Customer
+        Label searchPhoneLabel = new Label("Search by Phone Number:");
+        TextField searchPhoneField = new TextField();
+        Button searchButton = new Button("Search");
+        Label searchResultLabel = new Label();
 
-        // Layout Setup
-        GridPane gridPane = new GridPane();
-        gridPane.setPadding(new Insets(20));
-        gridPane.setHgap(10);
-        gridPane.setVgap(10);
+        // UI Elements for Deleting Customer
+        Label deletePhoneLabel = new Label("Delete by Phone Number:");
+        TextField deletePhoneField = new TextField();
+        Button deleteButton = new Button("Delete");
+        Label deleteResultLabel = new Label();
 
-        gridPane.add(phoneLabel, 0, 0);
-        gridPane.add(phoneField, 1, 0);
-        gridPane.add(amountLabel, 0, 1);
-        gridPane.add(amountField, 1, 1);
-        gridPane.add(addPointsButton, 0, 2);
-        gridPane.add(convertPointsButton, 1, 2);
+        // UI Elements for Showing All Customers
+        Button showAllButton = new Button("Show All Customers");
+        TextArea allCustomersArea = new TextArea();
+        allCustomersArea.setEditable(false);
 
-        VBox layout = new VBox(20, gridPane, outputArea);
-        layout.setPadding(new Insets(20));
+        // Event Handlers
+        submitButton.setOnAction(event -> {
+            String name = nameField.getText();
+            String phone = phoneField.getText();
+            int points = Integer.parseInt(pointsField.getText());
 
-        // Apply CSS
-        layout.setId("root");
-        Scene scene = new Scene(layout, 500, 400);
-        scene.getStylesheets().add("style.css");
+            try {
+                updateCustomerPoints(name, phone, points);
+                resultLabel.setText("Customer points updated successfully!");
+            } catch (SQLException e) {
+                resultLabel.setText("Error: " + e.getMessage());
+            }
+        });
 
-        // Button Actions
-        addPointsButton.setOnAction(e -> addPoints());
-        convertPointsButton.setOnAction(e -> convertPoints());
+        searchButton.setOnAction(event -> {
+            String phone = searchPhoneField.getText();
+            try {
+                String customerDetails = searchCustomerByPhone(phone);
+                searchResultLabel.setText(customerDetails);
+            } catch (SQLException e) {
+                searchResultLabel.setText("Error: " + e.getMessage());
+            }
+        });
 
-        // Display Stage
+        deleteButton.setOnAction(event -> {
+            String phone = deletePhoneField.getText();
+            try {
+                deleteCustomer(phone);
+                deleteResultLabel.setText("Customer deleted successfully!");
+            } catch (SQLException e) {
+                deleteResultLabel.setText("Error: " + e.getMessage());
+            }
+        });
+
+        showAllButton.setOnAction(event -> {
+            try {
+                String allCustomers = getAllCustomers();
+                allCustomersArea.setText(allCustomers);
+            } catch (SQLException e) {
+                allCustomersArea.setText("Error: " + e.getMessage());
+            }
+        });
+
+        // Layout
+        VBox vbox = new VBox(10,
+                nameLabel, nameField,
+                phoneLabel, phoneField,
+                pointsLabel, pointsField,
+                submitButton, resultLabel,
+                new Separator(),
+                searchPhoneLabel, searchPhoneField, searchButton, searchResultLabel,
+                new Separator(),
+                deletePhoneLabel, deletePhoneField, deleteButton, deleteResultLabel,
+                new Separator(),
+                showAllButton, allCustomersArea
+        );
+        Scene scene = new Scene(vbox, 400, 600);
         primaryStage.setScene(scene);
+        primaryStage.setTitle("Customer Loyalty Program");
         primaryStage.show();
     }
 
-    private void addPoints() {
-        String phone = phoneField.getText().trim();
-        String amountText = amountField.getText().trim();
+    private void updateCustomerPoints(String name, String phone, int points) throws SQLException {
+        Connection connection = DriverManager.getConnection(DB_URL, DB_USERNAME, DB_PASSWORD);
 
-        try {
-            int amountSpent = Integer.parseInt(amountText);
-            int pointsToAdd = amountSpent / POINTS_PER_RUPEE;
+        // Check if the customer exists
+        String checkCustomerQuery = "SELECT points FROM customers WHERE phone = ?";
+        PreparedStatement checkStmt = connection.prepareStatement(checkCustomerQuery);
+        checkStmt.setString(1, phone);
 
-            if (!phone.isEmpty() && amountSpent > 0) {
-                customerPoints.put(phone, customerPoints.getOrDefault(phone, 0) + pointsToAdd);
-                outputArea.appendText("Added " + pointsToAdd + " points to customer " + phone + ".\n");
-                outputArea.appendText("Current points: " + customerPoints.get(phone) + "\n\n");
-            } else {
-                outputArea.appendText("Please enter a valid phone number and amount.\n\n");
-            }
-        } catch (NumberFormatException ex) {
-            outputArea.appendText("Amount must be a valid number.\n\n");
+        ResultSet resultSet = checkStmt.executeQuery();
+
+        if (resultSet.next()) {
+            // Update existing customer's points
+            int existingPoints = resultSet.getInt("points");
+            String updateQuery = "UPDATE customers SET points = ? WHERE phone = ?";
+            PreparedStatement updateStmt = connection.prepareStatement(updateQuery);
+            updateStmt.setInt(1, existingPoints + points);
+            updateStmt.setString(2, phone);
+            updateStmt.executeUpdate();
+        } else {
+            // Insert new customer
+            String insertQuery = "INSERT INTO customers (name, phone, points) VALUES (?, ?, ?)";
+            PreparedStatement insertStmt = connection.prepareStatement(insertQuery);
+            insertStmt.setString(1, name);
+            insertStmt.setString(2, phone);
+            insertStmt.setInt(3, points);
+            insertStmt.executeUpdate();
         }
 
-        phoneField.clear();
-        amountField.clear();
+        // Record transaction
+        String transactionQuery = "INSERT INTO transactions (customer_phone, points_added) VALUES (?, ?)";
+        PreparedStatement transactionStmt = connection.prepareStatement(transactionQuery);
+        transactionStmt.setString(1, phone);
+        transactionStmt.setInt(2, points);
+        transactionStmt.executeUpdate();
+
+        connection.close();
     }
 
-    private void convertPoints() {
-        String phone = phoneField.getText().trim();
+    private String searchCustomerByPhone(String phone) throws SQLException {
+        Connection connection = DriverManager.getConnection(DB_URL, DB_USERNAME, DB_PASSWORD);
 
-        if (customerPoints.containsKey(phone)) {
-            int points = customerPoints.get(phone);
-            int rupees = points * POINT_TO_RUPEE_CONVERSION;
+        String query = "SELECT name, points FROM customers WHERE phone = ?";
+        PreparedStatement statement = connection.prepareStatement(query);
+        statement.setString(1, phone);
 
-            outputArea.appendText("Customer " + phone + " has " + points + " points.\n");
-            outputArea.appendText("Equivalent in rupees: " + rupees + " rupees.\n\n");
+        ResultSet resultSet = statement.executeQuery();
+
+        if (resultSet.next()) {
+            String name = resultSet.getString("name");
+            int points = resultSet.getInt("points");
+            connection.close();
+            return "Name: " + name + ", Points: " + points;
         } else {
-            outputArea.appendText("Customer not found. Please add points first.\n\n");
+            connection.close();
+            return "Customer not found.";
+        }
+    }
+
+    private void deleteCustomer(String phone) throws SQLException {
+        Connection connection = DriverManager.getConnection(DB_URL, DB_USERNAME, DB_PASSWORD);
+
+        // Delete transactions first
+        String deleteTransactionsQuery = "DELETE FROM transactions WHERE customer_phone = ?";
+        PreparedStatement deleteTransactionsStmt = connection.prepareStatement(deleteTransactionsQuery);
+        deleteTransactionsStmt.setString(1, phone);
+        deleteTransactionsStmt.executeUpdate();
+
+        // Then delete the customer
+        String deleteCustomerQuery = "DELETE FROM customers WHERE phone = ?";
+        PreparedStatement deleteCustomerStmt = connection.prepareStatement(deleteCustomerQuery);
+        deleteCustomerStmt.setString(1, phone);
+        deleteCustomerStmt.executeUpdate();
+
+        connection.close();
+    }
+
+    private String getAllCustomers() throws SQLException {
+        Connection connection = DriverManager.getConnection(DB_URL, DB_USERNAME, DB_PASSWORD);
+
+        String query = "SELECT name, phone, points FROM customers";
+        PreparedStatement statement = connection.prepareStatement(query);
+
+        ResultSet resultSet = statement.executeQuery();
+
+        StringBuilder result = new StringBuilder("All Customers:\n");
+        while (resultSet.next()) {
+            String name = resultSet.getString("name");
+            String phone = resultSet.getString("phone");
+            int points = resultSet.getInt("points");
+            result.append("Name: ").append(name)
+                    .append(", Phone: ").append(phone)
+                    .append(", Points: ").append(points)
+                    .append("\n");
         }
 
-        phoneField.clear();
+        connection.close();
+        return result.toString();
     }
 
     public static void main(String[] args) {

@@ -1,0 +1,14 @@
+.root {
+    -fx-font-family: Arial, sans-serif;
+    -fx-font-size: 14px;
+}
+
+.label {
+    -fx-font-weight: bold;
+}
+
+.button {
+    -fx-background-color: #4CAF50;
+    -fx-text-fill: white;
+    -fx-padding: 10px;
+}
